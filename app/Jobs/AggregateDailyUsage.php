@@ -28,7 +28,6 @@ class AggregateDailyUsage implements ShouldQueue
             ->whereDate('usage_date', $this->usageDate)
             ->orderBy('id')
             ->chunkById(1000, function ($events) {
-
                 $customerIds = $events
                     ->pluck('customer_id')
                     ->unique()
@@ -54,18 +53,30 @@ class AggregateDailyUsage implements ShouldQueue
                     )
                     ->get();
 
-                foreach ($totals as $total) {
-                    DailyUsage::updateOrCreate(
-                        [
-                            'customer_id' => $total->customer_id,
-                            'usage_date' => $total->usage_date,
-                        ],
-                        [
-                            'merchant_id' => $total->merchant_id,
-                            'total_units' => $total->total_units,
-                        ]
-                    );
+                if ($totals->isEmpty()) {
+                    return;
                 }
+
+                $rows = $totals->map(function ($total) {
+                    return [
+                        'merchant_id' => $total->merchant_id,
+                        'customer_id' => $total->customer_id,
+                        'usage_date' => $total->usage_date,
+                        'total_units' => $total->total_units,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ];
+                })->toArray();
+
+                DailyUsage::upsert(
+                    $rows,
+                    ['customer_id', 'usage_date'],
+                    [
+                        'merchant_id',
+                        'total_units',
+                        'updated_at',
+                    ]
+                );
             });
     }
 }
